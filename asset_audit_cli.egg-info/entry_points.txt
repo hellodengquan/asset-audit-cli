@@ -1,0 +1,2 @@
+[console_scripts]
+asset-audit = asset_audit_cli.main:app

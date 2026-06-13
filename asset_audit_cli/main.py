@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from enum import Enum
 from typing import Optional
 
@@ -7,7 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .models import AnomalyType, Asset, AssetStatus
+from .models import AnomalyType, Asset, AssetStatus, CategorySummary
 from .store import AssetStore
 
 app = typer.Typer(help="小型资产盘点 CLI 工具")
@@ -17,6 +18,24 @@ store = AssetStore()
 
 class GroupBy(str, Enum):
     CATEGORY = "category"
+
+
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    JSON = "json"
+
+
+def _summaries_to_json_payload(summaries: list[CategorySummary]) -> dict:
+    categories = [
+        {
+            "name": s.category,
+            "total": s.total_count,
+            "anomalies": s.anomaly_count,
+            "net_delta": s.net_change,
+        }
+        for s in summaries
+    ]
+    return {"categories": categories}
 
 
 def _status_style(status: str) -> str:
@@ -218,6 +237,7 @@ def summary(
     old_id: str = typer.Argument(..., help="旧快照 ID"),
     new_id: str = typer.Argument(..., help="新快照 ID"),
     group_by: Optional[GroupBy] = typer.Option(None, "--group-by", "-g", help="分组维度"),
+    fmt: OutputFormat = typer.Option(OutputFormat.TEXT, "--format", "-f", help="输出格式"),
 ):
     try:
         diff_result = store.diff_snapshots(old_id, new_id)
@@ -227,6 +247,12 @@ def summary(
 
     if group_by == GroupBy.CATEGORY:
         summaries = store.summarize_diff_by_category(old_id, new_id)
+
+        if fmt == OutputFormat.JSON:
+            payload = _summaries_to_json_payload(summaries)
+            console.print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+
         if not summaries:
             console.print("[dim]暂无类别数据[/]")
             return
@@ -258,6 +284,15 @@ def summary(
             f"[yellow]~{total_changed}[/]"
         )
     else:
+        if fmt == OutputFormat.JSON:
+            payload = {
+                "added": len(diff_result.added),
+                "removed": len(diff_result.removed),
+                "changed": len(diff_result.changed),
+            }
+            console.print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+
         if not diff_result.has_changes:
             console.print("[green]两个快照无差异[/]")
             return

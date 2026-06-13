@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional
 
 import typer
@@ -12,6 +13,10 @@ from .store import AssetStore
 app = typer.Typer(help="小型资产盘点 CLI 工具")
 console = Console()
 store = AssetStore()
+
+
+class GroupBy(str, Enum):
+    CATEGORY = "category"
 
 
 def _status_style(status: str) -> str:
@@ -206,6 +211,62 @@ def diff(
         f"[red]-{len(result.removed)}[/]  "
         f"[yellow]~{len(result.changed)}[/]"
     )
+
+
+@app.command()
+def summary(
+    old_id: str = typer.Argument(..., help="旧快照 ID"),
+    new_id: str = typer.Argument(..., help="新快照 ID"),
+    group_by: Optional[GroupBy] = typer.Option(None, "--group-by", "-g", help="分组维度"),
+):
+    try:
+        diff_result = store.diff_snapshots(old_id, new_id)
+    except ValueError as e:
+        console.print(f"[red]✘ {e}[/]")
+        raise typer.Exit(code=1)
+
+    if group_by == GroupBy.CATEGORY:
+        summaries = store.summarize_diff_by_category(old_id, new_id)
+        if not summaries:
+            console.print("[dim]暂无类别数据[/]")
+            return
+        for s in summaries:
+            table = Table(
+                title=f"[bold]{s.category}[/]  "
+                f"资产数: [cyan]{s.total_count}[/]  "
+                f"异常数: [yellow]{s.anomaly_count}[/]  "
+                f"净增减: [green]{s.net_change:+d}[/]",
+                show_header=True,
+            )
+            table.add_column("指标")
+            table.add_column("数值", justify="right")
+            table.add_row("资产总数", str(s.total_count))
+            table.add_row("异常数量", str(s.anomaly_count))
+            table.add_row("新增", f"[green]+{s.added_count}[/]")
+            table.add_row("移除", f"[red]-{s.removed_count}[/]")
+            table.add_row("变更", f"[yellow]~{s.changed_count}[/]")
+            table.add_row("净增减", f"[bold]{s.net_change:+d}[/]")
+            console.print(table)
+
+        total_added = sum(s.added_count for s in summaries)
+        total_removed = sum(s.removed_count for s in summaries)
+        total_changed = sum(s.changed_count for s in summaries)
+        console.print(
+            f"\n[bold]合计[/]: "
+            f"[green]+{total_added}[/]  "
+            f"[red]-{total_removed}[/]  "
+            f"[yellow]~{total_changed}[/]"
+        )
+    else:
+        if not diff_result.has_changes:
+            console.print("[green]两个快照无差异[/]")
+            return
+        console.print(
+            f"[bold]差异摘要[/]: "
+            f"[green]+{len(diff_result.added)}[/] 新增  "
+            f"[red]-{len(diff_result.removed)}[/] 移除  "
+            f"[yellow]~{len(diff_result.changed)}[/] 变更"
+        )
 
 
 @app.command()

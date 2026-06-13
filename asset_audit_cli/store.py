@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from .models import Asset, DiffResult, Snapshot
+from .models import Asset, CategorySummary, DiffResult, Snapshot
 
 DEFAULT_DATA_DIR = Path.home() / ".asset-audit"
 ASSETS_FILE = "assets.json"
@@ -121,3 +121,45 @@ class AssetStore:
                 changed.append({"asset_id": k, "before": old_map[k], "after": new_map[k]})
 
         return DiffResult(added=added, removed=removed, changed=changed)
+
+    def summarize_diff_by_category(self, old_id: str, new_id: str) -> list[CategorySummary]:
+        old_snap = self.find_snapshot(old_id)
+        new_snap = self.find_snapshot(new_id)
+        if old_snap is None or new_snap is None:
+            raise ValueError("快照不存在")
+
+        categories: dict[str, CategorySummary] = {}
+
+        for a in new_snap.assets:
+            cat = a["category"]
+            if cat not in categories:
+                categories[cat] = CategorySummary(category=cat)
+            categories[cat].total_count += 1
+            if a.get("anomaly"):
+                categories[cat].anomaly_count += 1
+
+        old_map = {a["asset_id"]: a for a in old_snap.assets}
+        new_map = {a["asset_id"]: a for a in new_snap.assets}
+
+        for aid in new_map:
+            if aid not in old_map:
+                cat = new_map[aid]["category"]
+                if cat not in categories:
+                    categories[cat] = CategorySummary(category=cat)
+                categories[cat].added_count += 1
+
+        for aid in old_map:
+            if aid not in new_map:
+                cat = old_map[aid]["category"]
+                if cat not in categories:
+                    categories[cat] = CategorySummary(category=cat)
+                categories[cat].removed_count += 1
+
+        for aid in old_map:
+            if aid in new_map and old_map[aid] != new_map[aid]:
+                cat = new_map[aid]["category"]
+                if cat not in categories:
+                    categories[cat] = CategorySummary(category=cat)
+                categories[cat].changed_count += 1
+
+        return sorted(categories.values(), key=lambda c: c.category)

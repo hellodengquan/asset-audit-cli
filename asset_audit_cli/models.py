@@ -111,3 +111,28 @@ class DiffResult:
             "removed": self.removed,
             "changed": self.changed,
         }
+
+
+@dataclass
+class CategorySummary:
+    category: str
+    total_count: int = 0
+    anomaly_count: int = 0
+    added_count: int = 0
+    removed_count: int = 0
+    changed_count: int = 0
+
+    @property
+    def net_change(self) -> int:
+        return self.added_count - self.removed_count
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "category": self.category,
+            "total_count": self.total_count,
+            "anomaly_count": self.anomaly_count,
+            "added_count": self.added_count,
+            "removed_count": self.removed_count,
+            "changed_count": self.changed_count,
+            "net_change": self.net_change,
+        }
